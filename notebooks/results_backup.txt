@@ -1,0 +1,79 @@
+===== results_backup.txt (project: DeepGlobe farmland segmentation) =====
+Test set = 121 images, each model evaluated once. Val = 25-image subset.
+
+===== FINAL runs.csv (from Kaggle, current) =====
+time,model,loss,lr,batch,epochs,train_images,val_images,final_train_loss,final_val_loss,best_val_iou,val_f1_at_best,test_iou,minutes
+2026-11-21 14:14,resnet34,cross_entropy,0.0002,16,15,120,25,0.0595,0.4395,0.7353,0.8475,,19.8
+2026-11-21 14:45,resnet34,ce_dice,0.0002,16,15,120,25,0.4188,1.0999,0.7253,0.8408,,19.9
+2026-11-21 16:40,scratch,ce,0.0002,16,15,120,25,0.2543,0.3431,0.6931,0.8188,0.7798,26.7
+2026-11-21 17:19,resnet34,ce_aug,0.0002,16,15,120,25,0.1864,0.315,0.7453,0.8541,0.8196,20.2
+
+NOTE: the test_iou cells of the first two rows are empty in the CSV (those runs were
+evaluated before the fix). Their test IoU, from the JSON files below:
+  resnet34 / cross_entropy = 0.8155
+  resnet34 / ce_dice       = 0.8140
+
+===== FINAL TEST RESULTS (test IoU, F1, OA, predicted farmland share; true = 59.6%) =====
+Scratch U-Net + CE            IoU 0.7798 | F1 0.8763 | OA 0.8532 | pred farm 59.1%
+ResNet34 + CE                 IoU 0.8155 | F1 0.8984 | OA 0.8796 | pred farm 58.9%
+ResNet34 + CE+Dice            IoU 0.8140 | F1 0.8974 | OA 0.8755 | pred farm 61.8%
+ResNet34 + CE + augmentation  IoU 0.8196 | F1 0.9009 | OA 0.8799 | pred farm 61.5%
+
+Confusion matrices (pixels):
+  Scratch:  tp 333,865,594 | fp 45,484,471 | fn 48,782,278 | tn 214,185,993
+  CE:       tp 341,905,086 | fp 36,587,250 | fn 40,742,786 | tn 223,083,214
+  CE+Dice:  tp 349,807,911 | fp 47,114,449 | fn 32,839,961 | tn 212,556,015
+  CE+aug:   tp 350,435,444 | fp 44,898,716 | fn 32,212,428 | tn 214,771,748
+
+===== HOW TO READ THIS =====
+- Pretraining helps: +0.036 test IoU (0.7798 -> 0.8155); same direction on val.
+- CE vs CE+Dice: a tie (-0.0015).
+- Augmentation: +0.004 test, +0.010 val; within run-to-run noise (~0.01), so a small, not clearly significant gain. It reduced missed farmland (fn 32.2M vs 40.7M).
+- Limits: single seed, 120 of 562 train images, 15 epochs, coarse polygon labels.
+- Run-to-run noise: the same ResNet34+CE setup gave val IoU 0.7237 in one session and 0.7353 in another.
+
+===== OLD FILES (kept as they were) =====
+
+===== test_metrics_unet_resnet34_ce_best.json =====
+{
+  "model": "UNet-ResNet34",
+  "loss": "cross_entropy",
+  "split": "test",
+  "n_images": 121,
+  "iou": 0.8155,
+  "f1": 0.8984,
+  "oa": 0.8796,
+  "pred_farm_share": 0.5893,
+  "true_farm_share": 0.5957,
+  "checkpoint": "unet_resnet34_ce_best.pth"
+}
+
+===== test_metrics_unet_resnet34_ce_dice_best.json =====
+WARNING: the "loss" label below is WRONG. This checkpoint was trained with CE+Dice.
+The numbers are correct. Do not quote the label.
+{
+  "model": "UNet-ResNet34",
+  "loss": "cross_entropy",
+  "split": "test",
+  "n_images": 121,
+  "iou": 0.814,
+  "f1": 0.8974,
+  "oa": 0.8755,
+  "pred_farm_share": 0.618,
+  "true_farm_share": 0.5957,
+  "checkpoint": "unet_resnet34_ce_dice_best.pth"
+}
+
+===== test_metrics.json (duplicate of the CE result, ignore) =====
+{
+  "model": "UNet-ResNet34",
+  "loss": "cross_entropy",
+  "split": "test",
+  "n_images": 121,
+  "iou": 0.8155,
+  "f1": 0.8984,
+  "oa": 0.8796,
+  "pred_farm_share": 0.5893,
+  "true_farm_share": 0.5957,
+  "checkpoint": "unet_resnet34_ce_best.pth"
+}

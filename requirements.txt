@@ -1,0 +1,8 @@
+# Only what the code actually imports (verified against src/*.py).
+# Install in a Kaggle notebook with a GPU; the local machine needs none of this.
+torch>=2.1
+torchvision
+segmentation-models-pytorch==0.6.0
+numpy
+Pillow
+matplotlib

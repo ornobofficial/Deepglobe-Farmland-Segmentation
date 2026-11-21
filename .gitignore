@@ -1,0 +1,30 @@
+# Data: DeepGlobe is research-license only — never commit it, link it in README instead
+data/
+*.zip
+*.tar.gz
+
+# Large training artifacts (checkpoints are saved every epoch, too big for GitHub)
+outputs/*.pth
+outputs/*.pt
+outputs/*.ckpt
+outputs/runs/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+notebooks/*.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Local scratch from a failed local pip run (sandbox ACL leftover, cannot be deleted)
+.pip-tmp/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
