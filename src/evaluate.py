@@ -52,16 +52,20 @@ def cut_tiles(img, mask, tile: int = TILE):
             yield img[r:r + tile, c:c + tile], mask[r:r + tile, c:c + tile]
 
 
-def parse_ckpt_name(stem: str) -> tuple[str, str]:
-    """'unet_resnet34_ce_dice_best' -> ('resnet34', 'ce_dice'). No hard-coded loss names."""
+def parse_ckpt_name(stem: str) -> tuple[str, str, int]:
+    """'unet_resnet34_ce_aug_s43_best' -> ('resnet34', 'ce_aug', 43). No hard-coded names."""
     body = stem.removeprefix("unet_").removesuffix("_best")
+    seed = 42                                   # default, for checkpoints without a seed suffix
+    head, sep, tail = body.rpartition("_s")
+    if sep and tail.isdigit():                  # "..._s43" -> seed 43
+        body, seed = head, int(tail)
     for loss in ("ce_dice", "ce_aug", "dice", "ce"):   # longest first, so ce_aug beats ce
         if body.endswith("_" + loss):
-            return body[: -len(loss) - 1], loss
-    return body, "unknown"
+            return body[: -len(loss) - 1], loss, seed
+    return body, "unknown", seed
 
 
-def record_test_iou(model: str, loss: str, val_iou: float, test_iou: float) -> None:
+def record_test_iou(model: str, loss: str, seed: int, val_iou: float, test_iou: float) -> None:
     """Write test IoU back into the runs.csv row that produced this checkpoint."""
     path = OUT_DIR / "runs.csv"
     if not path.exists():
@@ -71,7 +75,7 @@ def record_test_iou(model: str, loss: str, val_iou: float, test_iou: float) -> N
         rows = list(csv.DictReader(f))
     best_i, best_d = None, 1e9
     for i, r in enumerate(rows):
-        if r["model"] == model and r["loss"] == loss:
+        if r["model"] == model and r["loss"] == loss and str(r.get("seed", "")) == str(seed):
             d = abs(float(r["best_val_iou"]) - val_iou)   # pick the run with this val IoU
             if d < best_d:
                 best_i, best_d = i, d
@@ -109,12 +113,12 @@ def main() -> None:
 
     # Build the architecture WITHOUT downloading weights: our checkpoint overwrites
     # every parameter anyway, so the pretrained download is pointless here.
-    ckpt_model, ckpt_loss = parse_ckpt_name(CKPT.stem)   # model/loss read from the filename
+    ckpt_model, ckpt_loss, ckpt_seed = parse_ckpt_name(CKPT.stem)   # read from the filename
     model = build_eval_model(ckpt_model)
     ckpt = torch.load(CKPT, map_location="cpu", weights_only=False)  # our own file
     model.load_state_dict(ckpt["model"])       # copy the trained weights in
     model.to(device).eval()                    # GPU + eval mode (BatchNorm frozen)
-    print(f"loaded {CKPT.name} | model {ckpt_model} | loss {ckpt_loss} | "
+    print(f"loaded {CKPT.name} | model {ckpt_model} | loss {ckpt_loss} | seed {ckpt_seed} | "
           f"epoch {ckpt['epoch']} | val IoU {ckpt['val_iou']:.4f}")
 
     tp = fp = fn = tn = 0
@@ -178,14 +182,14 @@ def main() -> None:
     plt.close(fig)
     print("figure ->", OUT_DIR / f"test_predictions_{CKPT.stem}.png")
 
-    metrics = {"model": ckpt_model, "loss": ckpt_loss, "split": "test",
+    metrics = {"model": ckpt_model, "loss": ckpt_loss, "seed": ckpt_seed, "split": "test",
                "n_images": len(test_pairs), "iou": round(iou, 4), "f1": round(f1, 4),
                "oa": round(oa, 4), "pred_farm_share": round(pred_share, 4),
                "true_farm_share": round(true_share, 4), "checkpoint": CKPT.name}
     (OUT_DIR / f"test_metrics_{CKPT.stem}.json").write_text(json.dumps(metrics, indent=2))
     print("metrics ->", OUT_DIR / f"test_metrics_{CKPT.stem}.json")
 
-    record_test_iou(ckpt_model, ckpt_loss, float(ckpt["val_iou"]), iou)   # fill runs.csv
+    record_test_iou(ckpt_model, ckpt_loss, ckpt_seed, float(ckpt["val_iou"]), iou)  # fill runs.csv
 
     if iou < 0.5:
         print(">>> WARNING: test IoU below 0.5 - do not tune on test, report as is.")

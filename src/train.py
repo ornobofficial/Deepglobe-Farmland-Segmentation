@@ -88,7 +88,15 @@ def build_model(name: str) -> nn.Module:
 
 
 def main() -> None:
-    set_seed(SEED)
+    # CLI: train.py <model> <loss> <seed> <train_images|all>  (all optional)
+    model_name = sys.argv[1] if len(sys.argv) > 1 else "scratch"
+    loss_name = sys.argv[2] if len(sys.argv) > 2 else "ce"
+    seed = int(sys.argv[3]) if len(sys.argv) > 3 else SEED
+    n_train = TRAIN_IMAGES
+    if len(sys.argv) > 4:                          # "all" = every training image
+        n_train = None if sys.argv[4] == "all" else int(sys.argv[4])
+
+    set_seed(seed)                                 # per-run seed -> mean +/- std later
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # GPU if there is one
     print("device:", device, "|", torch.cuda.get_device_name(0) if device.type == "cuda" else "cpu")
     torch.backends.cudnn.benchmark = True    # lets cuDNN pick the fastest conv kernels
@@ -96,15 +104,15 @@ def main() -> None:
     # ---- data: reuse the Step 3 pipeline exactly -------------------------- #
     pairs = find_pairs(INPUT_ROOT)
     agri = agriculture_rgb(load_class_dict(INPUT_ROOT))
-    splits = split_pairs(pairs, SEED)
-    train_tiles = build_tiles(splits["train"], agri, limit=TRAIN_IMAGES)
+    splits = split_pairs(pairs, seed)
+    train_tiles = build_tiles(splits["train"], agri, limit=n_train)
     val_tiles = build_tiles(splits["val"], agri, limit=VAL_IMAGES)
     print(f"tiles: train {len(train_tiles)} | val {len(val_tiles)}")
 
     use_aug = len(sys.argv) > 2 and sys.argv[2].endswith("_aug")   # 'ce_aug' -> augment
     train_ds = DeepGlobeTiles(train_tiles)        # plain tiles
     if use_aug:                                   # random flips/rot90 on TRAIN tiles only
-        train_ds = AugDataset(train_ds, seed=SEED)
+        train_ds = AugDataset(train_ds, seed=seed)
     train_loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True,
                               num_workers=NUM_WORKERS, pin_memory=True, drop_last=True)
     val_loader = DataLoader(DeepGlobeTiles(val_tiles), batch_size=BATCH, shuffle=False,
@@ -112,16 +120,15 @@ def main() -> None:
     # shuffle=True: new tile order each epoch. pin_memory: faster CPU->GPU copy.
 
     # ---- model, loss, optimiser ------------------------------------------ #
-    model_name = sys.argv[1] if len(sys.argv) > 1 else "scratch"   # default = Step 4 baseline
-    loss_name = sys.argv[2] if len(sys.argv) > 2 else "ce"        # 'ce', 'dice' or 'ce_dice'
-    run_name = f"unet_{model_name}_{loss_name}"   # separate checkpoint names per model/loss
+    run_name = f"unet_{model_name}_{loss_name}_s{seed}"   # seed in the name -> runs never overwrite
     model = build_model(model_name).to(device)    # move all weights to the GPU
     n_params = sum(p.numel() for p in model.parameters())
     loss_fn = build_loss(loss_name.replace("_aug", ""))   # 'ce_aug' uses plain cross-entropy
     opt = torch.optim.Adam(model.parameters(), lr=LR)
     scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")  # AMP helper
     print(f"model: {model_name} | params {n_params:,} | lr {LR} | batch {BATCH} | epochs {EPOCHS}")
-    print(f"train {TRAIN_IMAGES} images | val {VAL_IMAGES} images | loss: {loss_name}")
+    print(f"train {n_train if n_train else 'all'} images | val {VAL_IMAGES} images | "
+          f"loss: {loss_name} | aug: {use_aug} | seed: {seed}")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     history = {"epoch": [], "train_loss": [], "val_loss": [], "val_iou": [], "val_f1": []}
@@ -197,8 +204,8 @@ def main() -> None:
 
     # ---- run log (feeds the results table later) -------------------------- #
     row = {"time": time.strftime("%Y-%m-%d %H:%M"), "model": model_name,
-           "loss": loss_name, "lr": LR, "batch": BATCH, "epochs": EPOCHS,
-           "train_images": TRAIN_IMAGES, "val_images": VAL_IMAGES,
+           "loss": loss_name, "seed": seed, "lr": LR, "batch": BATCH, "epochs": EPOCHS,
+           "train_images": n_train if n_train else "all", "val_images": VAL_IMAGES,
            "final_train_loss": round(history["train_loss"][-1], 4),
            "final_val_loss": round(history["val_loss"][-1], 4),
            "best_val_iou": round(best_iou, 4),
